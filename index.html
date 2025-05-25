@@ -23,16 +23,21 @@
         }
 
         .container {
-            width: 100%;
-            max-width: 640px;
-            height: 100vh;
-            max-height: 480px;
+            position: fixed;
+            width: 640px;
+            height: 480px;
             background: #C0C0C0;
             border: 2px solid;
             border-color: #FFFFFF #808080 #808080 #FFFFFF;
             display: flex;
             flex-direction: column;
             box-shadow: 1px 1px 0 #000000;
+            left: calc(50% - 320px);
+            top: calc(50% - 240px);
+        }
+
+        .container.dragging {
+            cursor: move;
         }
 
         /* Title Bar */
@@ -45,6 +50,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: move;
+            user-select: none;
         }
 
         .title-bar button {
@@ -276,10 +283,15 @@
             border-color: #FFFFFF #000000 #000000 #FFFFFF;
         }
 
-        @media (max-width: 600px) {
+        /* Smaller window on mobile */
+        @media (max-width: 768px) {
             .container {
-                max-height: 100vh;
-                border: none;
+                width: 90vw;
+                max-width: 480px;
+                height: 70vh;
+                max-height: 400px;
+                left: 5vw;
+                top: 15vh;
             }
         }
     </style>
@@ -358,8 +370,8 @@
         let reconnectInterval = null;
         let isConnected = false;
 
-        // Create message sound
-        const messageSound = new Audio('data:audio/wav;base64,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');
+        // Create a more pleasant notification sound (lower pitched bell)
+        const messageSound = new Audio('data:audio/wav;base64,UklGRiQFAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAFAACAhYSFh4WFh4aIiYaGh4aFh4WGgwAAAAAAAAAAAAAAAAAAAAB1b2VqaW5sbmxtbm1sa2pqaWprbG1ub25ub25ub29ub25vb3BvcHFwcHJxcnJzcnNzdHR0dHR1dXZ1dXZ2dnd3eHd5eHh5eXp5eXp7e3x7e3x9fn19fn5/f4CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGAgICAgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGAgICBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYCAhYKDg4KDg4SEhYWFhISDg4KDgIB8e3d3dHRzdHR1dXZ2dnh3eXl5ent7fH19fn+AgYCBgYCBgIGAf359fHx7e3p5eXh4d3d2dXV0c3NycnBxcG9ubm1tbGxqamppaWlpZ2hoZ2dmZ2ZmZWVlZGRkY2RjY2JhYmJgYV9fX19fXl5fXl9dXV1dXF1bXFxbW1pbWlpaWVlZWFlYWVlYV1hYV1hXV1dWVldWVlZVVlVVVVVVVFVUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFNTVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFVVVVVWVldWV1hXWFhYWFlaWVpbW1xbXFxdXV5eX19gYGFhYWJjY2RkZGVmZ2doaGhpa2pra21tbm5vcHFxcXJzdHV1dnd4d3h5enp7fH1+foCAgIGCg4SEhYaGh4iIiYqKi4uMjY2Njo6OjpCOj4+QkJCRkZGSkpOSk5OTlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSTk5STk5OTk5OTk5OTk5OSkpKTk5KSkpKSkpKSkpKSkpKSkpGRkZGRkZGRkZGQkZGQkJGQkZCRkJGQkJCQkJCQkJCQkJCQkJCQj5CQj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pjo+Pj46Ojo6Ojo2Ojo6Ojo6Ojo6OjY6Njo2OjY2Njo2OjY6Njo2OjY6Njo2OjY6Njo6Ojo6Oj46Pj5CPj5CPkJCPj5CQkJCQkJCQkJCQkJCQkJCQkJCQkJGRkZGRkZGRkZGRkZKRkpKSkpKSk5KTkpKTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OUk5OTk5STk5OTk5OTk5OTk5OTk5OUk5SUlJSTlJOUlJOUk5STlJOUk5SUk5SUk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5STlJOUk5STlJOUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJQ=');
 
         // Check if joining existing room
         const urlParams = new URLSearchParams(window.location.search);
@@ -769,6 +781,75 @@
                     }
                 }, 100);
             });
+        }
+
+        // Make window draggable
+        const container = document.querySelector('.container');
+        const titleBar = document.querySelector('.title-bar');
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+
+        // Mouse events
+        titleBar.addEventListener('mousedown', dragStart);
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('mouseup', dragEnd);
+
+        // Touch events for mobile
+        titleBar.addEventListener('touchstart', dragStart, {passive: false});
+        document.addEventListener('touchmove', drag, {passive: false});
+        document.addEventListener('touchend', dragEnd);
+
+        function dragStart(e) {
+            if (e.target.tagName === 'BUTTON') return; // Don't drag when clicking the X button
+            
+            const rect = container.getBoundingClientRect();
+            
+            if (e.type === 'touchstart') {
+                initialX = e.touches[0].clientX - rect.left;
+                initialY = e.touches[0].clientY - rect.top;
+            } else {
+                initialX = e.clientX - rect.left;
+                initialY = e.clientY - rect.top;
+            }
+
+            if (e.target === titleBar || titleBar.contains(e.target)) {
+                isDragging = true;
+                container.classList.add('dragging');
+            }
+        }
+
+        function drag(e) {
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+
+            if (isDragging) {
+                if (e.type === 'touchmove') {
+                    currentX = e.touches[0].clientX - initialX;
+                    currentY = e.touches[0].clientY - initialY;
+                } else {
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+                }
+
+                // Keep window within viewport bounds
+                const maxX = window.innerWidth - container.offsetWidth;
+                const maxY = window.innerHeight - container.offsetHeight;
+                
+                currentX = Math.max(0, Math.min(currentX, maxX));
+                currentY = Math.max(0, Math.min(currentY, maxY));
+
+                container.style.left = currentX + 'px';
+                container.style.top = currentY + 'px';
+            }
+        }
+
+        function dragEnd(e) {
+            isDragging = false;
+            container.classList.remove('dragging');
         }
     </script>
 </body>
