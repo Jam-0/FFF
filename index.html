@@ -102,6 +102,23 @@
             color: #666;
         }
 
+        .connection-status {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-left: 10px;
+        }
+
+        .connection-status.connected {
+            background: #4caf50;
+            color: white;
+        }
+
+        .connection-status.disconnected {
+            background: #f44336;
+            color: white;
+        }
+
         .messages {
             flex: 1;
             overflow-y: auto;
@@ -245,13 +262,17 @@
                 <p style="margin-top: 20px;">Share this link with your friends:</p>
                 <div class="share-link" id="shareLink"></div>
                 <button onclick="copyLink()" style="margin-top: 10px;">Copy Link</button>
+                <button onclick="enterRoom()" style="margin-top: 10px;">Enter Room</button>
             </div>
         </div>
 
         <!-- Chat Interface -->
         <div id="chat" class="chat">
             <div class="chat-header">
-                <h2>Encrypted Room</h2>
+                <div style="display: flex; align-items: center;">
+                    <h2>Encrypted Room</h2>
+                    <span class="connection-status disconnected" id="connectionStatus">Connecting...</span>
+                </div>
                 <span class="user-count" id="userCount">1 user</span>
             </div>
             
@@ -284,6 +305,9 @@
         let userNumber = null;
         let encryptionKey = null;
         let messages = [];
+        let ws = null;
+        let reconnectInterval = null;
+        let isConnected = false;
 
         // Check if joining existing room
         const urlParams = new URLSearchParams(window.location.search);
@@ -291,13 +315,6 @@
         if (joinRoomId) {
             joinRoom(joinRoomId);
         }
-        
-        // Initialize WebSocket on page load
-        window.addEventListener('load', () => {
-            if (roomId) {
-                connectWebSocket();
-            }
-        });
 
         // Create new room
         function createRoom() {
@@ -307,7 +324,13 @@
             const roomLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
             document.getElementById('shareLink').textContent = roomLink;
             document.getElementById('roomLink').style.display = 'block';
-            
+        }
+
+        // Enter room button
+        function enterRoom() {
+            if (roomId) {
+                joinRoom(roomId);
+            }
         }
 
         // Join existing room
@@ -320,6 +343,127 @@
             
             // Connect to WebSocket
             connectWebSocket();
+        }
+
+        // WebSocket connection
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+            
+            console.log('Connecting to WebSocket:', wsUrl);
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('Connected to server');
+                    isConnected = true;
+                    updateConnectionStatus(true);
+                    
+                    // Clear reconnect interval
+                    if (reconnectInterval) {
+                        clearInterval(reconnectInterval);
+                        reconnectInterval = null;
+                    }
+                    
+                    // Join room
+                    if (roomId && userId) {
+                        ws.send(JSON.stringify({
+                            type: 'join',
+                            roomId: roomId,
+                            userId: userId
+                        }));
+                    }
+                };
+                
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    switch (data.type) {
+                        case 'joined':
+                            userId = data.userId;
+                            userNumber = data.userNumber;
+                            addSystemMessage(`You joined as User ${userNumber}`);
+                            break;
+                            
+                        case 'messages':
+                            // Display existing messages
+                            data.messages.forEach(msg => {
+                                if (!messages.find(m => m.id === msg.id)) {
+                                    messages.push(msg);
+                                    displayMessage(msg);
+                                }
+                            });
+                            break;
+                            
+                        case 'message':
+                            // New message from another user
+                            if (!messages.find(m => m.id === data.message.id)) {
+                                messages.push(data.message);
+                                displayMessage(data.message);
+                            }
+                            break;
+                            
+                        case 'user_count':
+                            updateUserCount(data.count);
+                            break;
+                            
+                        case 'user_joined':
+                            if (data.userNumber !== userNumber) {
+                                addSystemMessage(`User ${data.userNumber} joined`);
+                            }
+                            break;
+                            
+                        case 'user_left':
+                            addSystemMessage(`User ${data.userNumber} left`);
+                            break;
+                            
+                        case 'error':
+                            alert(data.message);
+                            window.location.href = '/';
+                            break;
+                    }
+                };
+                
+                ws.onclose = () => {
+                    console.log('Disconnected from server');
+                    isConnected = false;
+                    updateConnectionStatus(false);
+                    
+                    // Try to reconnect every 3 seconds
+                    if (!reconnectInterval) {
+                        reconnectInterval = setInterval(() => {
+                            console.log('Attempting to reconnect...');
+                            connectWebSocket();
+                        }, 3000);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    isConnected = false;
+                    updateConnectionStatus(false);
+                };
+                
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                isConnected = false;
+                updateConnectionStatus(false);
+            }
+        }
+
+        // Update connection status display
+        function updateConnectionStatus(connected) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (connected) {
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'connection-status connected';
+            } else {
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'connection-status disconnected';
+            }
         }
 
         // Set encryption key
@@ -346,7 +490,12 @@
             const input = document.getElementById('messageInput');
             const message = input.value.trim();
             
-            if (!message || !encryptionKey || !ws || ws.readyState !== WebSocket.OPEN) return;
+            if (!message || !encryptionKey) return;
+            
+            if (!isConnected || !ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Not connected to server. Please wait for connection to establish.');
+                return;
+            }
             
             const encrypted = await encryptMessage(message, encryptionKey);
             
@@ -393,106 +542,41 @@
                 `;
             } else {
                 // Try to decrypt
-                decryptMessage(messageObj.encrypted, encryptionKey).then(text => {
-                    messageEl.innerHTML = `
-                        <div class="message-info">
-                            ${messageObj.userId === userId ? 'You' : `User ${messageObj.userNumber}`}<br>
-                            ${time}
-                        </div>
-                        <div class="message-content">${escapeHtml(text)}</div>
-                    `;
-                }).catch(() => {
+                if (encryptionKey) {
+                    decryptMessage(messageObj.encrypted, encryptionKey).then(text => {
+                        messageEl.innerHTML = `
+                            <div class="message-info">
+                                ${messageObj.userId === userId ? 'You' : `User ${messageObj.userNumber}`}<br>
+                                ${time}
+                            </div>
+                            <div class="message-content">${escapeHtml(text)}</div>
+                        `;
+                    }).catch(() => {
+                        messageEl.innerHTML = `
+                            <div class="message-info">
+                                ${messageObj.userId === userId ? 'You' : `User ${messageObj.userNumber}`}<br>
+                                ${time}
+                            </div>
+                            <div class="message-content" style="font-style: italic; opacity: 0.6;">
+                                [Encrypted message - wrong key?]
+                            </div>
+                        `;
+                    });
+                } else {
                     messageEl.innerHTML = `
                         <div class="message-info">
                             ${messageObj.userId === userId ? 'You' : `User ${messageObj.userNumber}`}<br>
                             ${time}
                         </div>
                         <div class="message-content" style="font-style: italic; opacity: 0.6;">
-                            [Encrypted message - wrong key?]
+                            [Set encryption key to view]
                         </div>
                     `;
-                });
+                }
             }
             
             messagesEl.appendChild(messageEl);
             messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-
-        // WebSocket connection
-        let ws = null;
-        
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}`);
-            
-            ws.onopen = () => {
-                console.log('Connected to server');
-                if (roomId && userId) {
-                    ws.send(JSON.stringify({
-                        type: 'join',
-                        roomId: roomId,
-                        userId: userId
-                    }));
-                }
-            };
-            
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                
-                switch (data.type) {
-                    case 'joined':
-                        userId = data.userId;
-                        userNumber = data.userNumber;
-                        addSystemMessage(`You joined as User ${userNumber}`);
-                        break;
-                        
-                    case 'messages':
-                        // Display existing messages
-                        data.messages.forEach(msg => {
-                            if (!messages.find(m => m.id === msg.id)) {
-                                messages.push(msg);
-                                displayMessage(msg);
-                            }
-                        });
-                        break;
-                        
-                    case 'message':
-                        // New message from another user
-                        if (!messages.find(m => m.id === data.message.id)) {
-                            messages.push(data.message);
-                            displayMessage(data.message);
-                        }
-                        break;
-                        
-                    case 'user_count':
-                        updateUserCount(data.count);
-                        break;
-                        
-                    case 'user_joined':
-                        if (data.userNumber !== userNumber) {
-                            addSystemMessage(`User ${data.userNumber} joined`);
-                        }
-                        break;
-                        
-                    case 'user_left':
-                        addSystemMessage(`User ${data.userNumber} left`);
-                        break;
-                        
-                    case 'error':
-                        alert(data.message);
-                        window.location.href = '/';
-                        break;
-                }
-            };
-            
-            ws.onclose = () => {
-                console.log('Disconnected from server');
-                setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
-            };
-            
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
         }
 
         // Encryption functions
