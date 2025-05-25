@@ -161,6 +161,38 @@ wss.on('connection', (ws) => {
                         }
                     }
                     break;
+                    
+                case 'chess_move':
+                    if (currentRoom) {
+                        currentRoom.broadcast({
+                            type: 'chess_move',
+                            from: data.from,
+                            to: data.to,
+                            board: data.board,
+                            turn: data.turn,
+                            username: data.username
+                        });
+                    }
+                    break;
+                    
+                case 'chess_reset':
+                    if (currentRoom) {
+                        currentRoom.broadcast({
+                            type: 'chess_reset',
+                            username: data.username
+                        });
+                    }
+                    break;
+                    
+                case 'chess_state':
+                    if (currentRoom) {
+                        currentRoom.broadcast({
+                            type: 'chess_state',
+                            board: data.board,
+                            turn: data.turn
+                        });
+                    }
+                    break;
             }
         } catch (error) {
             console.error('WebSocket error:', error);
