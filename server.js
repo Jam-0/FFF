@@ -20,7 +20,7 @@ class Room {
         this.userCounter = 0;
     }
 
-    addUser(ws, userId) {
+    addUser(ws, userId, username) {
         if (this.users.size >= 4) {
             return false; // Room full
         }
@@ -32,6 +32,7 @@ class Room {
             ws,
             userId,
             userNumber,
+            username: username || `User${userNumber}`,
             joinedAt: new Date()
         });
         
@@ -40,6 +41,7 @@ class Room {
             type: 'joined',
             userId,
             userNumber,
+            username: username || `User${userNumber}`,
             roomId: this.id
         }));
         
@@ -55,7 +57,8 @@ class Room {
         // Broadcast join message
         this.broadcast({
             type: 'user_joined',
-            userNumber
+            userNumber,
+            username: username || `User${userNumber}`
         });
         
         return true;
@@ -68,7 +71,8 @@ class Room {
             this.broadcastUserCount();
             this.broadcast({
                 type: 'user_left',
-                userNumber: user.userNumber
+                userNumber: user.userNumber,
+                username: user.username
             });
         }
         
@@ -120,7 +124,7 @@ wss.on('connection', (ws) => {
             
             switch (data.type) {
                 case 'join':
-                    const { roomId, userId } = data;
+                    const { roomId, userId, username } = data;
                     
                     // Create room if doesn't exist
                     if (!rooms.has(roomId)) {
@@ -128,7 +132,7 @@ wss.on('connection', (ws) => {
                     }
                     
                     const room = rooms.get(roomId);
-                    const joined = room.addUser(ws, userId);
+                    const joined = room.addUser(ws, userId, username);
                     
                     if (joined) {
                         currentRoom = room;
@@ -150,6 +154,7 @@ wss.on('connection', (ws) => {
                                 id: Date.now(),
                                 userId: currentUserId,
                                 userNumber: user.userNumber,
+                                username: user.username,
                                 encrypted: data.encrypted,
                                 timestamp: new Date()
                             });
