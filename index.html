@@ -1133,6 +1133,19 @@
         // Make windows draggable and resizable
         let zIndex = 1001;
         
+        // Global resize state
+        let globalResizeState = {
+            isResizing: false,
+            currentWindow: null,
+            currentHandle: null,
+            startX: 0,
+            startY: 0,
+            startWidth: 0,
+            startHeight: 0,
+            startLeft: 0,
+            startTop: 0
+        };
+        
         function makeDraggable(windowElement, titleBarElement) {
             let isDragging = false;
             let currentX;
@@ -1208,108 +1221,102 @@
         // Make window resizable
         function makeResizable(windowElement) {
             const handles = windowElement.querySelectorAll('.resize-handle');
-            let isResizing = false;
-            let currentHandle = null;
-            let startX = 0;
-            let startY = 0;
-            let startWidth = 0;
-            let startHeight = 0;
-            let startLeft = 0;
-            let startTop = 0;
 
             handles.forEach(handle => {
-                handle.addEventListener('mousedown', initResize);
-                handle.addEventListener('touchstart', initResize, {passive: false});
+                handle.addEventListener('mousedown', (e) => initResize(e, windowElement));
+                handle.addEventListener('touchstart', (e) => initResize(e, windowElement), {passive: false});
             });
+        }
 
-            function initResize(e) {
-                isResizing = true;
-                currentHandle = e.target;
-                
-                if (e.type === 'touchstart') {
-                    startX = e.touches[0].clientX;
-                    startY = e.touches[0].clientY;
-                } else {
-                    startX = e.clientX;
-                    startY = e.clientY;
-                }
-                
-                startWidth = parseInt(window.getComputedStyle(windowElement).width, 10);
-                startHeight = parseInt(window.getComputedStyle(windowElement).height, 10);
-                startLeft = parseInt(windowElement.style.left || windowElement.offsetLeft, 10);
-                startTop = parseInt(windowElement.style.top || windowElement.offsetTop, 10);
-                
-                document.addEventListener('mousemove', doResize);
-                document.addEventListener('mouseup', stopResize);
-                document.addEventListener('touchmove', doResize, {passive: false});
-                document.addEventListener('touchend', stopResize);
-                
-                e.preventDefault();
+        function initResize(e, windowElement) {
+            globalResizeState.isResizing = true;
+            globalResizeState.currentWindow = windowElement;
+            globalResizeState.currentHandle = e.target;
+            
+            if (e.type === 'touchstart') {
+                globalResizeState.startX = e.touches[0].clientX;
+                globalResizeState.startY = e.touches[0].clientY;
+            } else {
+                globalResizeState.startX = e.clientX;
+                globalResizeState.startY = e.clientY;
             }
+            
+            globalResizeState.startWidth = parseInt(window.getComputedStyle(windowElement).width, 10);
+            globalResizeState.startHeight = parseInt(window.getComputedStyle(windowElement).height, 10);
+            globalResizeState.startLeft = parseInt(windowElement.style.left || windowElement.offsetLeft, 10);
+            globalResizeState.startTop = parseInt(windowElement.style.top || windowElement.offsetTop, 10);
+            
+            e.preventDefault();
+        }
 
-            function doResize(e) {
-                if (!isResizing) return;
-                
-                let clientX, clientY;
-                if (e.type === 'touchmove') {
-                    clientX = e.touches[0].clientX;
-                    clientY = e.touches[0].clientY;
-                } else {
-                    clientX = e.clientX;
-                    clientY = e.clientY;
-                }
-                
-                const dx = clientX - startX;
-                const dy = clientY - startY;
-                
-                const minWidth = parseInt(window.getComputedStyle(windowElement).minWidth, 10) || 200;
-                const minHeight = parseInt(window.getComputedStyle(windowElement).minHeight, 10) || 200;
-                
-                if (currentHandle.classList.contains('resize-handle-e')) {
-                    windowElement.style.width = Math.max(minWidth, startWidth + dx) + 'px';
-                } else if (currentHandle.classList.contains('resize-handle-w')) {
-                    const newWidth = Math.max(minWidth, startWidth - dx);
-                    windowElement.style.width = newWidth + 'px';
-                    windowElement.style.left = (startLeft + startWidth - newWidth) + 'px';
-                } else if (currentHandle.classList.contains('resize-handle-s')) {
-                    windowElement.style.height = Math.max(minHeight, startHeight + dy) + 'px';
-                } else if (currentHandle.classList.contains('resize-handle-n')) {
-                    const newHeight = Math.max(minHeight, startHeight - dy);
-                    windowElement.style.height = newHeight + 'px';
-                    windowElement.style.top = (startTop + startHeight - newHeight) + 'px';
-                } else if (currentHandle.classList.contains('resize-handle-se')) {
-                    windowElement.style.width = Math.max(minWidth, startWidth + dx) + 'px';
-                    windowElement.style.height = Math.max(minHeight, startHeight + dy) + 'px';
-                } else if (currentHandle.classList.contains('resize-handle-sw')) {
-                    const newWidth = Math.max(minWidth, startWidth - dx);
-                    windowElement.style.width = newWidth + 'px';
-                    windowElement.style.left = (startLeft + startWidth - newWidth) + 'px';
-                    windowElement.style.height = Math.max(minHeight, startHeight + dy) + 'px';
-                } else if (currentHandle.classList.contains('resize-handle-ne')) {
-                    windowElement.style.width = Math.max(minWidth, startWidth + dx) + 'px';
-                    const newHeight = Math.max(minHeight, startHeight - dy);
-                    windowElement.style.height = newHeight + 'px';
-                    windowElement.style.top = (startTop + startHeight - newHeight) + 'px';
-                } else if (currentHandle.classList.contains('resize-handle-nw')) {
-                    const newWidth = Math.max(minWidth, startWidth - dx);
-                    const newHeight = Math.max(minHeight, startHeight - dy);
-                    windowElement.style.width = newWidth + 'px';
-                    windowElement.style.height = newHeight + 'px';
-                    windowElement.style.left = (startLeft + startWidth - newWidth) + 'px';
-                    windowElement.style.top = (startTop + startHeight - newHeight) + 'px';
-                }
-                
-                e.preventDefault();
-            }
+        // Global resize event handlers
+        document.addEventListener('mousemove', doResize);
+        document.addEventListener('mouseup', stopResize);
+        document.addEventListener('touchmove', doResize, {passive: false});
+        document.addEventListener('touchend', stopResize);
 
-            function stopResize() {
-                isResizing = false;
-                currentHandle = null;
-                document.removeEventListener('mousemove', doResize);
-                document.removeEventListener('mouseup', stopResize);
-                document.removeEventListener('touchmove', doResize);
-                document.removeEventListener('touchend', stopResize);
+        function doResize(e) {
+            if (!globalResizeState.isResizing || !globalResizeState.currentWindow) return;
+            
+            const state = globalResizeState;
+            const windowElement = state.currentWindow;
+            
+            let clientX, clientY;
+            if (e.type === 'touchmove') {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
             }
+            
+            const dx = clientX - state.startX;
+            const dy = clientY - state.startY;
+            
+            const minWidth = parseInt(window.getComputedStyle(windowElement).minWidth, 10) || 200;
+            const minHeight = parseInt(window.getComputedStyle(windowElement).minHeight, 10) || 200;
+            
+            if (state.currentHandle.classList.contains('resize-handle-e')) {
+                windowElement.style.width = Math.max(minWidth, state.startWidth + dx) + 'px';
+            } else if (state.currentHandle.classList.contains('resize-handle-w')) {
+                const newWidth = Math.max(minWidth, state.startWidth - dx);
+                windowElement.style.width = newWidth + 'px';
+                windowElement.style.left = (state.startLeft + state.startWidth - newWidth) + 'px';
+            } else if (state.currentHandle.classList.contains('resize-handle-s')) {
+                windowElement.style.height = Math.max(minHeight, state.startHeight + dy) + 'px';
+            } else if (state.currentHandle.classList.contains('resize-handle-n')) {
+                const newHeight = Math.max(minHeight, state.startHeight - dy);
+                windowElement.style.height = newHeight + 'px';
+                windowElement.style.top = (state.startTop + state.startHeight - newHeight) + 'px';
+            } else if (state.currentHandle.classList.contains('resize-handle-se')) {
+                windowElement.style.width = Math.max(minWidth, state.startWidth + dx) + 'px';
+                windowElement.style.height = Math.max(minHeight, state.startHeight + dy) + 'px';
+            } else if (state.currentHandle.classList.contains('resize-handle-sw')) {
+                const newWidth = Math.max(minWidth, state.startWidth - dx);
+                windowElement.style.width = newWidth + 'px';
+                windowElement.style.left = (state.startLeft + state.startWidth - newWidth) + 'px';
+                windowElement.style.height = Math.max(minHeight, state.startHeight + dy) + 'px';
+            } else if (state.currentHandle.classList.contains('resize-handle-ne')) {
+                windowElement.style.width = Math.max(minWidth, state.startWidth + dx) + 'px';
+                const newHeight = Math.max(minHeight, state.startHeight - dy);
+                windowElement.style.height = newHeight + 'px';
+                windowElement.style.top = (state.startTop + state.startHeight - newHeight) + 'px';
+            } else if (state.currentHandle.classList.contains('resize-handle-nw')) {
+                const newWidth = Math.max(minWidth, state.startWidth - dx);
+                const newHeight = Math.max(minHeight, state.startHeight - dy);
+                windowElement.style.width = newWidth + 'px';
+                windowElement.style.height = newHeight + 'px';
+                windowElement.style.left = (state.startLeft + state.startWidth - newWidth) + 'px';
+                windowElement.style.top = (state.startTop + state.startHeight - newHeight) + 'px';
+            }
+            
+            e.preventDefault();
+        }
+
+        function stopResize() {
+            globalResizeState.isResizing = false;
+            globalResizeState.currentWindow = null;
+            globalResizeState.currentHandle = null;
         }
 
         // Make chat window draggable and resizable
