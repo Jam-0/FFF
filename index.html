@@ -1,207 +1,775 @@
-// server.js
-const express = require('express');
-const http = require('http');
-const WebSocket = require('ws');
-const path = require('path');
-
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-
-// Store active rooms
-const rooms = new Map();
-
-// Room class
-class Room {
-    constructor(id) {
-        this.id = id;
-        this.users = new Map();
-        this.messages = [];
-        this.userCounter = 0;
-    }
-
-    addUser(ws, userId, username) {
-        if (this.users.size >= 4) {
-            return false; // Room full
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberChat '95 - Encrypted Messenger</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        
-        this.userCounter++;
-        const userNumber = this.userCounter;
-        
-        this.users.set(userId, {
-            ws,
-            userId,
-            userNumber,
-            username: username || `User${userNumber}`,
-            joinedAt: new Date()
-        });
-        
-        // Send user their info
-        ws.send(JSON.stringify({
-            type: 'joined',
-            userId,
-            userNumber,
-            username: username || `User${userNumber}`,
-            roomId: this.id
-        }));
-        
-        // Send existing messages
-        ws.send(JSON.stringify({
-            type: 'messages',
-            messages: this.messages
-        }));
-        
-        // Broadcast user count update
-        this.broadcastUserCount();
-        
-        // Broadcast join message
-        this.broadcast({
-            type: 'user_joined',
-            userNumber,
-            username: username || `User${userNumber}`
-        });
-        
-        return true;
-    }
 
-    removeUser(userId) {
-        const user = this.users.get(userId);
-        if (user) {
-            this.users.delete(userId);
-            this.broadcastUserCount();
-            this.broadcast({
-                type: 'user_left',
-                userNumber: user.userNumber,
-                username: user.username
+        body {
+            font-family: "MS Sans Serif", Arial, sans-serif;
+            font-size: 11px;
+            background: #008080;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            image-rendering: pixelated;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 640px;
+            height: 100vh;
+            max-height: 480px;
+            background: #C0C0C0;
+            border: 2px solid;
+            border-color: #FFFFFF #808080 #808080 #FFFFFF;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 1px 1px 0 #000000;
+        }
+
+        /* Title Bar */
+        .title-bar {
+            background: linear-gradient(to right, #000080, #1084D0);
+            color: white;
+            padding: 2px 4px;
+            font-weight: bold;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .title-bar button {
+            width: 16px;
+            height: 14px;
+            background: #C0C0C0;
+            border: 2px solid;
+            border-color: #FFFFFF #000000 #000000 #FFFFFF;
+            font-size: 10px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        /* Landing Page */
+        .landing {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100%;
+            background: #C0C0C0;
+        }
+
+        .window-content {
+            border: 2px solid;
+            border-color: #808080 #FFFFFF #FFFFFF #808080;
+            background: #C0C0C0;
+            padding: 20px;
+            margin: 10px;
+        }
+
+        .landing h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #000080;
+            text-shadow: 1px 1px 0 #FFFFFF;
+            font-family: "Times New Roman", serif;
+        }
+
+        .landing p {
+            color: #000000;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 2px 4px;
+            border: 2px solid;
+            border-color: #808080 #FFFFFF #FFFFFF #808080;
+            background: #FFFFFF;
+            font-family: "MS Sans Serif", Arial, sans-serif;
+            font-size: 11px;
+        }
+
+        .button {
+            background: #C0C0C0;
+            border: 2px solid;
+            border-color: #FFFFFF #000000 #000000 #FFFFFF;
+            padding: 4px 16px;
+            font-family: "MS Sans Serif", Arial, sans-serif;
+            font-size: 11px;
+            cursor: pointer;
+            min-width: 75px;
+        }
+
+        .button:active {
+            border-color: #000000 #FFFFFF #FFFFFF #000000;
+        }
+
+        .button:focus {
+            outline: 1px dotted #000000;
+            outline-offset: -4px;
+        }
+
+        .share-link {
+            margin-top: 15px;
+            padding: 8px;
+            background: #FFFFFF;
+            border: 2px solid;
+            border-color: #808080 #FFFFFF #FFFFFF #808080;
+            font-family: "Courier New", monospace;
+            font-size: 10px;
+            word-break: break-all;
+        }
+
+        /* Chat Interface */
+        .chat {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            background: #C0C0C0;
+        }
+
+        .chat-header {
+            background: #C0C0C0;
+            padding: 8px;
+            border-bottom: 2px solid;
+            border-color: #808080 #FFFFFF #FFFFFF #808080;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .connection-status {
+            font-size: 10px;
+            padding: 1px 4px;
+            border: 1px solid #000000;
+        }
+
+        .connection-status.connected {
+            background: #00FF00;
+            color: #000000;
+        }
+
+        .connection-status.disconnected {
+            background: #FF0000;
+            color: #FFFFFF;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            background: #FFFFFF;
+            border: 2px solid;
+            border-color: #808080 #FFFFFF #FFFFFF #808080;
+            margin: 8px;
+            font-family: "Courier New", monospace;
+            font-size: 12px;
+        }
+
+        .message {
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+
+        .message-header {
+            color: #0000FF;
+            font-weight: bold;
+        }
+
+        .message.own .message-header {
+            color: #FF0000;
+        }
+
+        .message-content {
+            color: #000000;
+            margin-left: 20px;
+        }
+
+        .message-time {
+            color: #808080;
+            font-size: 10px;
+        }
+
+        .key-input {
+            padding: 8px;
+            margin: 0 8px;
+            background: #FFFFE0;
+            border: 2px solid;
+            border-color: #000000 #FFFFFF #FFFFFF #000000;
+            text-align: center;
+        }
+
+        .chat-input {
+            padding: 8px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 2px 4px;
+            border: 2px solid;
+            border-color: #808080 #FFFFFF #FFFFFF #808080;
+            background: #FFFFFF;
+            font-family: "MS Sans Serif", Arial, sans-serif;
+            font-size: 11px;
+        }
+
+        .system-message {
+            text-align: center;
+            color: #008000;
+            font-style: italic;
+            margin: 8px 0;
+        }
+
+        .ascii-art {
+            font-family: "Courier New", monospace;
+            font-size: 10px;
+            line-height: 1;
+            color: #000080;
+            white-space: pre;
+            margin: 10px 0;
+        }
+
+        /* Scrollbar styling for that 90s look */
+        ::-webkit-scrollbar {
+            width: 16px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #C0C0C0;
+            border: 1px solid;
+            border-color: #808080 #FFFFFF #FFFFFF #808080;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #C0C0C0;
+            border: 2px solid;
+            border-color: #FFFFFF #000000 #000000 #FFFFFF;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                max-height: 100vh;
+                border: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title-bar">
+            <span>CyberChat '95 - Encrypted Messenger</span>
+            <button onclick="alert('Welcome to the 90s!')">X</button>
+        </div>
+
+        <!-- Landing Page -->
+        <div id="landing" class="landing">
+            <div class="window-content">
+                <h1>Welcome to CyberChat '95</h1>
+                <div class="ascii-art">
+╔═══════════════════════════════╗
+║  SECURE * PRIVATE * ENCRYPTED ║
+╚═══════════════════════════════╝</div>
+                <p>Create a secure chatroom for up to 4 people. All messages are encrypted with your shared secret key!</p>
+                
+                <div class="form-group">
+                    <label for="username">Choose Your Handle:</label>
+                    <input type="text" id="username" placeholder="CyberWarrior" maxlength="20">
+                </div>
+                
+                <button class="button" onclick="createRoom()">Create New Room</button>
+                
+                <div id="roomLink" style="display:none;">
+                    <p style="margin-top: 15px;"><strong>Share this link with your friends:</strong></p>
+                    <div class="share-link" id="shareLink"></div>
+                    <div style="margin-top: 10px;">
+                        <button class="button" onclick="copyLink()">Copy Link</button>
+                        <button class="button" onclick="enterRoom()">Enter Room</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Interface -->
+        <div id="chat" class="chat">
+            <div class="chat-header">
+                <div class="user-info">
+                    <strong>Room: <span id="roomName"></span></strong>
+                    <span class="connection-status disconnected" id="connectionStatus">OFFLINE</span>
+                </div>
+                <span id="userCount">1 user online</span>
+            </div>
+            
+            <div class="key-input" id="keyInput">
+                <strong>ENCRYPTION REQUIRED:</strong> Enter your shared secret key:
+                <input type="password" id="encryptionKey" placeholder="Secret key" style="margin: 0 8px;">
+                <button class="button" onclick="setKey()">Set Key</button>
+                <div style="color: red; margin-top: 4px;" id="keyError"></div>
+            </div>
+
+            <div class="messages" id="messages">
+                <div class="system-message">*** Welcome to CyberChat '95! Set your encryption key to start chatting. ***</div>
+            </div>
+
+            <div class="chat-input">
+                <input type="text" id="messageInput" placeholder="Type your message here..." disabled>
+                <button class="button" onclick="sendMessage()" id="sendButton" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let roomId = null;
+        let userId = null;
+        let username = null;
+        let encryptionKey = null;
+        let messages = [];
+        let ws = null;
+        let reconnectInterval = null;
+        let isConnected = false;
+
+        // Create message sound
+        const messageSound = new Audio('data:audio/wav;base64,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');
+
+        // Check if joining existing room
+        const urlParams = new URLSearchParams(window.location.search);
+        const joinRoomId = urlParams.get('room');
+        if (joinRoomId) {
+            // Prompt for username first
+            document.getElementById('roomLink').style.display = 'none';
+        }
+
+        // Create new room
+        function createRoom() {
+            const usernameInput = document.getElementById('username');
+            username = usernameInput.value.trim() || 'Anonymous' + Math.floor(Math.random() * 1000);
+            
+            roomId = generateRoomId();
+            userId = generateUserId();
+            
+            const roomLink = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+            document.getElementById('shareLink').textContent = roomLink;
+            document.getElementById('roomLink').style.display = 'block';
+        }
+
+        // Enter room button
+        function enterRoom() {
+            if (roomId) {
+                joinRoom(roomId);
+            }
+        }
+
+        // Join existing room
+        function joinRoom(id) {
+            // Get username if not set
+            if (!username) {
+                const usernameInput = document.getElementById('username');
+                username = usernameInput.value.trim() || 'Anonymous' + Math.floor(Math.random() * 1000);
+            }
+            
+            roomId = id;
+            userId = generateUserId();
+            
+            document.getElementById('landing').style.display = 'none';
+            document.getElementById('chat').style.display = 'flex';
+            document.getElementById('roomName').textContent = roomId.toUpperCase();
+            
+            // Connect to WebSocket
+            connectWebSocket();
+        }
+
+        // WebSocket connection
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+            
+            console.log('Connecting to WebSocket:', wsUrl);
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('Connected to server');
+                    isConnected = true;
+                    updateConnectionStatus(true);
+                    
+                    // Clear reconnect interval
+                    if (reconnectInterval) {
+                        clearInterval(reconnectInterval);
+                        reconnectInterval = null;
+                    }
+                    
+                    // Join room with username
+                    if (roomId && userId) {
+                        ws.send(JSON.stringify({
+                            type: 'join',
+                            roomId: roomId,
+                            userId: userId,
+                            username: username
+                        }));
+                    }
+                };
+                
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    switch (data.type) {
+                        case 'joined':
+                            userId = data.userId;
+                            addSystemMessage(`*** ${username} has entered the chat room ***`);
+                            break;
+                            
+                        case 'messages':
+                            // Display existing messages
+                            data.messages.forEach(msg => {
+                                if (!messages.find(m => m.id === msg.id)) {
+                                    messages.push(msg);
+                                    displayMessage(msg);
+                                }
+                            });
+                            break;
+                            
+                        case 'message':
+                            // New message from another user - only show if not from self
+                            if (data.message.userId !== userId) {
+                                messages.push(data.message);
+                                displayMessage(data.message);
+                                // Play sound for new messages
+                                if (encryptionKey) {
+                                    messageSound.play().catch(e => console.log('Sound play failed:', e));
+                                }
+                            }
+                            break;
+                            
+                        case 'user_count':
+                            updateUserCount(data.count);
+                            break;
+                            
+                        case 'user_joined':
+                            if (data.username !== username) {
+                                addSystemMessage(`*** ${data.username} has entered the chat room ***`);
+                            }
+                            break;
+                            
+                        case 'user_left':
+                            addSystemMessage(`*** ${data.username} has left the chat room ***`);
+                            break;
+                            
+                        case 'error':
+                            alert(data.message);
+                            window.location.href = '/';
+                            break;
+                    }
+                };
+                
+                ws.onclose = () => {
+                    console.log('Disconnected from server');
+                    isConnected = false;
+                    updateConnectionStatus(false);
+                    
+                    // Try to reconnect every 3 seconds
+                    if (!reconnectInterval) {
+                        reconnectInterval = setInterval(() => {
+                            console.log('Attempting to reconnect...');
+                            connectWebSocket();
+                        }, 3000);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    isConnected = false;
+                    updateConnectionStatus(false);
+                };
+                
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                isConnected = false;
+                updateConnectionStatus(false);
+            }
+        }
+
+        // Update connection status display
+        function updateConnectionStatus(connected) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (connected) {
+                statusEl.textContent = 'ONLINE';
+                statusEl.className = 'connection-status connected';
+            } else {
+                statusEl.textContent = 'OFFLINE';
+                statusEl.className = 'connection-status disconnected';
+            }
+        }
+
+        // Set encryption key
+        function setKey() {
+            const keyInput = document.getElementById('encryptionKey');
+            const key = keyInput.value.trim();
+            
+            if (!key) {
+                document.getElementById('keyError').textContent = 'ERROR: Key required!';
+                return;
+            }
+            
+            encryptionKey = key;
+            document.getElementById('keyInput').style.display = 'none';
+            document.getElementById('messageInput').disabled = false;
+            document.getElementById('sendButton').disabled = false;
+            document.getElementById('messageInput').focus();
+            
+            addSystemMessage('*** Encryption key set. Secure channel established. ***');
+        }
+
+        // Send message
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || !encryptionKey) return;
+            
+            if (!isConnected || !ws || ws.readyState !== WebSocket.OPEN) {
+                alert('ERROR: Not connected to server. Please wait for connection.');
+                return;
+            }
+            
+            const encrypted = await encryptMessage(message, encryptionKey);
+            
+            const messageObj = {
+                id: Date.now(),
+                userId: userId,
+                username: username,
+                encrypted: encrypted,
+                timestamp: new Date()
+            };
+            
+            // Send via WebSocket
+            ws.send(JSON.stringify({
+                type: 'message',
+                encrypted: encrypted,
+                username: username
+            }));
+            
+            // Add to local messages and display immediately
+            messages.push(messageObj);
+            displayMessage(messageObj, message);
+            
+            // Clear input
+            input.value = '';
+        }
+
+        // Display message
+        function displayMessage(messageObj, decryptedText = null) {
+            const messagesEl = document.getElementById('messages');
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${messageObj.userId === userId ? 'own' : ''}`;
+            
+            const time = new Date(messageObj.timestamp).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            const displayName = messageObj.username || `User${messageObj.userId.substr(0,4)}`;
+            
+            if (decryptedText) {
+                messageEl.innerHTML = `
+                    <div class="message-header">&lt;${escapeHtml(displayName)}&gt; <span class="message-time">[${time}]</span></div>
+                    <div class="message-content">${escapeHtml(decryptedText)}</div>
+                `;
+            } else {
+                // Try to decrypt
+                if (encryptionKey) {
+                    decryptMessage(messageObj.encrypted, encryptionKey).then(text => {
+                        messageEl.innerHTML = `
+                            <div class="message-header">&lt;${escapeHtml(displayName)}&gt; <span class="message-time">[${time}]</span></div>
+                            <div class="message-content">${escapeHtml(text)}</div>
+                        `;
+                    }).catch(() => {
+                        messageEl.innerHTML = `
+                            <div class="message-header">&lt;${escapeHtml(displayName)}&gt; <span class="message-time">[${time}]</span></div>
+                            <div class="message-content" style="color: #FF0000;">[DECRYPTION ERROR - INVALID KEY]</div>
+                        `;
+                    });
+                } else {
+                    messageEl.innerHTML = `
+                        <div class="message-header">&lt;${escapeHtml(displayName)}&gt; <span class="message-time">[${time}]</span></div>
+                        <div class="message-content" style="color: #808080;">[ENCRYPTED MESSAGE - KEY REQUIRED]</div>
+                    `;
+                }
+            }
+            
+            messagesEl.appendChild(messageEl);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        // Encryption functions
+        async function encryptMessage(message, key) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(message);
+            
+            const keyMaterial = await getKeyMaterial(key);
+            const cryptoKey = await window.crypto.subtle.deriveKey(
+                {
+                    name: "PBKDF2",
+                    salt: encoder.encode("static-salt"), // Use static salt for simplicity
+                    iterations: 100000,
+                    hash: "SHA-256"
+                },
+                keyMaterial,
+                { name: "AES-GCM", length: 256 },
+                false,
+                ["encrypt", "decrypt"]
+            );
+            
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const encrypted = await window.crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv },
+                cryptoKey,
+                data
+            );
+            
+            const combined = new Uint8Array(iv.length + encrypted.byteLength);
+            combined.set(iv);
+            combined.set(new Uint8Array(encrypted), iv.length);
+            
+            return btoa(String.fromCharCode(...combined));
+        }
+
+        async function decryptMessage(encryptedBase64, key) {
+            try {
+                const encoder = new TextEncoder();
+                const combined = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0));
+                
+                const iv = combined.slice(0, 12);
+                const encrypted = combined.slice(12);
+                
+                const keyMaterial = await getKeyMaterial(key);
+                const cryptoKey = await window.crypto.subtle.deriveKey(
+                    {
+                        name: "PBKDF2",
+                        salt: encoder.encode("static-salt"),
+                        iterations: 100000,
+                        hash: "SHA-256"
+                    },
+                    keyMaterial,
+                    { name: "AES-GCM", length: 256 },
+                    false,
+                    ["encrypt", "decrypt"]
+                );
+                
+                const decrypted = await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv },
+                    cryptoKey,
+                    encrypted
+                );
+                
+                return new TextDecoder().decode(decrypted);
+            } catch (error) {
+                throw new Error('Decryption failed');
+            }
+        }
+
+        async function getKeyMaterial(password) {
+            const encoder = new TextEncoder();
+            return window.crypto.subtle.importKey(
+                "raw",
+                encoder.encode(password),
+                "PBKDF2",
+                false,
+                ["deriveBits", "deriveKey"]
+            );
+        }
+
+        // Helper functions
+        function generateRoomId() {
+            return Math.random().toString(36).substr(2, 6).toUpperCase();
+        }
+
+        function generateUserId() {
+            return Math.random().toString(36).substr(2, 9);
+        }
+
+        function updateUserCount(count = 1) {
+            document.getElementById('userCount').textContent = `${count} user${count !== 1 ? 's' : ''} online`;
+        }
+
+        function addSystemMessage(text) {
+            const messagesEl = document.getElementById('messages');
+            const messageEl = document.createElement('div');
+            messageEl.className = 'system-message';
+            messageEl.textContent = text;
+            messagesEl.appendChild(messageEl);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function copyLink() {
+            const link = document.getElementById('shareLink').textContent;
+            navigator.clipboard.writeText(link);
+            alert('Link copied to clipboard!');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Enter key to send
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        document.getElementById('encryptionKey').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                setKey();
+            }
+        });
+
+        // Auto-join if room in URL
+        if (joinRoomId) {
+            window.addEventListener('load', () => {
+                setTimeout(() => {
+                    const usernamePrompt = prompt('Enter your username:', 'User' + Math.floor(Math.random() * 1000));
+                    if (usernamePrompt) {
+                        username = usernamePrompt.trim().substr(0, 20);
+                        joinRoom(joinRoomId);
+                    }
+                }, 100);
             });
         }
-        
-        // Clean up empty rooms
-        if (this.users.size === 0) {
-            rooms.delete(this.id);
-        }
-    }
-
-    broadcastMessage(message) {
-        this.messages.push(message);
-        
-        // Keep only last 100 messages
-        if (this.messages.length > 100) {
-            this.messages.shift();
-        }
-        
-        this.broadcast({
-            type: 'message',
-            message
-        });
-    }
-
-    broadcast(data) {
-        const message = JSON.stringify(data);
-        this.users.forEach(user => {
-            if (user.ws.readyState === WebSocket.OPEN) {
-                user.ws.send(message);
-            }
-        });
-    }
-
-    broadcastUserCount() {
-        this.broadcast({
-            type: 'user_count',
-            count: this.users.size
-        });
-    }
-}
-
-// WebSocket connection handling
-wss.on('connection', (ws) => {
-    let currentRoom = null;
-    let currentUserId = null;
-    
-    ws.on('message', (message) => {
-        try {
-            const data = JSON.parse(message);
-            
-            switch (data.type) {
-                case 'join':
-                    const { roomId, userId, username } = data;
-                    
-                    // Create room if doesn't exist
-                    if (!rooms.has(roomId)) {
-                        rooms.set(roomId, new Room(roomId));
-                    }
-                    
-                    const room = rooms.get(roomId);
-                    const joined = room.addUser(ws, userId, username);
-                    
-                    if (joined) {
-                        currentRoom = room;
-                        currentUserId = userId;
-                    } else {
-                        ws.send(JSON.stringify({
-                            type: 'error',
-                            message: 'Room is full (max 4 users)'
-                        }));
-                        ws.close();
-                    }
-                    break;
-                    
-                case 'message':
-                    if (currentRoom && currentUserId) {
-                        const user = currentRoom.users.get(currentUserId);
-                        if (user) {
-                            currentRoom.broadcastMessage({
-                                id: Date.now(),
-                                userId: currentUserId,
-                                userNumber: user.userNumber,
-                                username: user.username,
-                                encrypted: data.encrypted,
-                                timestamp: new Date()
-                            });
-                        }
-                    }
-                    break;
-            }
-        } catch (error) {
-            console.error('WebSocket error:', error);
-        }
-    });
-    
-    ws.on('close', () => {
-        if (currentRoom && currentUserId) {
-            currentRoom.removeUser(currentUserId);
-        }
-    });
-});
-
-// Serve static files
-app.use(express.static('public'));
-
-// Serve the HTML file
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// Health check
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok',
-        rooms: rooms.size,
-        connections: wss.clients.size
-    });
-});
-
-// Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
-
-// Clean up old messages periodically (every hour)
-setInterval(() => {
-    rooms.forEach(room => {
-        if (room.messages.length > 50) {
-            room.messages = room.messages.slice(-50);
-        }
-    });
-}, 60 * 60 * 1000);
+    </script>
+</body>
+</html>
